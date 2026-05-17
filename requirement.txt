@@ -1,0 +1,11 @@
+openai>=1.0
+datasets>=2.0
+seqeval>=1.2.2
+numpy
+matplotlib
+tqdm
+langgraph
+langchain
+langchain-openai
+python-dotenv
+chromadb
