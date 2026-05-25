@@ -1,0 +1,32 @@
+# Claude / IDE internals
+.agents/
+.claude/
+CLAUDE.md
+STRATEGY.md
+skills-lock.json
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.whl
+
+# Experiment data (large)
+predictions_multiseed/
+results_multiseed/
+
+# Paper artifacts (figures, tables, appendix)
+*.pdf
+*.csv
+*.tex
+
+# Debug / one-off scripts
+diagnose.py
+diagnose_boundary.py
+diagnose_deep.py
+test_fix.py
+quick_validate.py
+tiny_gray_test.py
+install_bioc.py

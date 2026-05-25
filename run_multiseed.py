@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import concurrent.futures
 import json
 import logging
 import os
@@ -45,20 +46,22 @@ logging.basicConfig(level=logging.INFO,
 # Config
 # ---------------------------------------------------------------------------
 
-DATASETS    = ["msra", "conll2003", "wnut17"]
+DATASETS    = ["msra", "conll2003", "wnut17", "fewnerd", "ontonotes5"]
 NOISE_TYPES = ["BT", "IF", "ATF"]
 SEEDS       = [13, 42, 2024]
-SAMPLE_SIZE = 200
-MAX_CONCURRENCY = 20      # match ablation_runner3.py
+SAMPLE_SIZE = None  # None = full dataset
+MAX_CONCURRENCY = 200     # high throughput for LLM API calls
 
-# Configurations mirror ablation_runner3.CONFIGURATIONS, keyed by safe names.
+# Configurations — each key maps to either a pipeline config or a standalone method.
 CONFIGURATIONS: Dict[str, dict] = {
-    "td_dva_full":           {"lambda_bias": 1.0,  "use_dfa": True,  "use_topology_rag": True},
-    "semantic_rag_baseline": {"lambda_bias": 1.0,  "use_dfa": False, "use_topology_rag": False},
-    # Uncomment to add ablations:
-    # "wo_topology_rag":     {"lambda_bias": 1.0,  "use_dfa": True,  "use_topology_rag": False},
-    # "wo_dfa_wash":         {"lambda_bias": 1.0,  "use_dfa": False, "use_topology_rag": True},
-    # "late_fusion_bias":    {"lambda_bias": 1.35, "use_dfa": True,  "use_topology_rag": True},
+    # Our method: Coder + Reviewer(DEER retrieval) + Voting + DFA wash
+    "td_dva_full":              {"lambda_bias": 1.0,  "use_dfa": True},
+    # Baselines (2024-2025 published & standard)
+    "baseline_zero_shot":         {"method": "zero_shot"},
+    "baseline_cot_reasoning":     {"method": "cot_reasoning"},
+    "baseline_self_refine":       {"method": "self_refine"},
+    "baseline_rule_only":         {"method": "rule_only"},
+    "baseline_standard_prompting": {"method": "standard_prompting"},
 }
 
 NOISY_DIR = Path("results_multiseed")
@@ -71,27 +74,113 @@ PRED_DIR.mkdir(exist_ok=True)
 # ---------------------------------------------------------------------------
 
 def _import_pipeline(dummy: bool):
-    """Return an async function run_agent_pipeline(tokens, dirty_tags, config)."""
+    """Return (default_pipeline, baseline_pipelines_dict).
+
+    default_pipeline: async fn for td_dva_full.
+    baseline_pipelines: dict mapping method_name -> async fn for standalone baselines.
+    """
+    from utils import enforce_iob2_syntax
+
+    # Non-LLM baselines — always available
+    async def _baseline_rule_only(tokens, dirty_tags, config=None, dataset_name=None):
+        _DS_TYPES = {
+            "msra": {"PER", "LOC", "ORG"},
+            "conll2003": {"PER", "LOC", "ORG", "MISC"},
+            "wnut17": {"PER", "LOC", "ORG", "MISC"},
+            "fewnerd": {"PER", "LOC", "ORG", "MISC"},
+            "ontonotes5": {"PER", "LOC", "ORG", "MISC"},
+        }
+        valid = _DS_TYPES.get(dataset_name or "conll2003", {"PER", "LOC", "ORG"})
+        return enforce_iob2_syntax(list(dirty_tags), valid_entity_types=valid)
+
+    baseline_pipelines = {
+        "rule_only":  _baseline_rule_only,
+    }
+
     if dummy:
-        async def mock_pipeline(tokens, dirty_tags, config):
-            # Trivial differentiator: td_dva_full "fixes" 60% of corrupted slots
-            # (by copying from gold), semantic_rag_baseline only 30%. Gold is
-            # smuggled via `config['__gold__']` only in dummy mode.
+        async def _mock_cot_reasoning(tokens, dirty_tags, config=None, dataset_name=None):
             import random as _rnd
-            gold = config.get("__gold__", dirty_tags)
-            rate = 0.6 if config.get("use_dfa") and config.get("use_topology_rag") else 0.3
-            rng = _rnd.Random(config.get("__seed__", 0))
+            gold = config.get("__gold__", dirty_tags) if config else dirty_tags
+            seed = config.get("__seed__", 0) if config else 0
+            rate = 0.35
+            rng = _rnd.Random(seed)
             out = list(dirty_tags)
             for j, t in enumerate(out):
                 if j < len(gold) and t != gold[j] and rng.random() < rate:
                     out[j] = gold[j]
             await asyncio.sleep(0)
             return out
-        return mock_pipeline
+
+        async def _mock_self_refine(tokens, dirty_tags, config=None, dataset_name=None):
+            import random as _rnd
+            gold = config.get("__gold__", dirty_tags) if config else dirty_tags
+            seed = config.get("__seed__", 0) if config else 0
+            rate = 0.45
+            rng = _rnd.Random(seed)
+            out = list(dirty_tags)
+            for j, t in enumerate(out):
+                if j < len(gold) and t != gold[j] and rng.random() < rate:
+                    out[j] = gold[j]
+            await asyncio.sleep(0)
+            return out
+
+        async def _mock_zero_shot(tokens, dirty_tags, config=None, dataset_name=None):
+            import random as _rnd
+            gold = config.get("__gold__", dirty_tags) if config else dirty_tags
+            seed = config.get("__seed__", 0) if config else 0
+            rate = 0.30  # Zero-shot: no examples, weakest LLM baseline
+            rng = _rnd.Random(seed)
+            out = list(dirty_tags)
+            for j, t in enumerate(out):
+                if j < len(gold) and t != gold[j] and rng.random() < rate:
+                    out[j] = gold[j]
+            await asyncio.sleep(0)
+            return out
+
+        baseline_pipelines["cot_reasoning"] = _mock_cot_reasoning
+        baseline_pipelines["self_refine"]   = _mock_self_refine
+        baseline_pipelines["zero_shot"]     = _mock_zero_shot
+
+        async def _mock_standard_prompting(tokens, dirty_tags, config=None, dataset_name=None):
+            import random as _rnd
+            gold = config.get("__gold__", dirty_tags) if config else dirty_tags
+            seed = config.get("__seed__", 0) if config else 0
+            rate = 0.20  # Standard prompting: minimal prompt, no IOB2 rules, weak baseline
+            rng = _rnd.Random(seed)
+            out = list(dirty_tags)
+            for j, t in enumerate(out):
+                if j < len(gold) and t != gold[j] and rng.random() < rate:
+                    out[j] = gold[j]
+            await asyncio.sleep(0)
+            return out
+        baseline_pipelines["standard_prompting"] = _mock_standard_prompting
+
+        async def mock_pipeline(tokens, dirty_tags, config=None, dataset_name=None):
+            import random as _rnd
+            gold = config.get("__gold__", dirty_tags) if config else dirty_tags
+            rate = 0.6 if (config and config.get("use_dfa")) else 0.3
+            rng = _rnd.Random(config.get("__seed__", 0) if config else 0)
+            out = list(dirty_tags)
+            for j, t in enumerate(out):
+                if j < len(gold) and t != gold[j] and rng.random() < rate:
+                    out[j] = gold[j]
+            await asyncio.sleep(0)
+            return out
+        return mock_pipeline, baseline_pipelines
 
     try:
-        from multi_agent_v2 import run_agent_pipeline
-        return run_agent_pipeline
+        from multi_agent_v2 import (
+            run_agent_pipeline,
+            baseline_cot_reasoning_pipeline,
+            baseline_self_refine_pipeline,
+            baseline_zero_shot_pipeline,
+            baseline_standard_prompting_pipeline,
+        )
+        baseline_pipelines["cot_reasoning"]      = baseline_cot_reasoning_pipeline
+        baseline_pipelines["self_refine"]        = baseline_self_refine_pipeline
+        baseline_pipelines["zero_shot"]          = baseline_zero_shot_pipeline
+        baseline_pipelines["standard_prompting"] = baseline_standard_prompting_pipeline
+        return run_agent_pipeline, baseline_pipelines
     except ImportError as e:                              # pragma: no cover
         raise ImportError(
             "Could not import run_agent_pipeline from multi_agent_v2.py. "
@@ -106,12 +195,11 @@ def _import_pipeline(dummy: bool):
 
 def _noisy_path(dataset: str, noise: str, seed: int, size: int,
                 ratio: float = 0.15) -> Path:
-    # Backward compat: 0.15 keeps the legacy filename so existing files
-    # generated before the rate-sweep extension still resolve.
+    size_suffix = f"__N{size}" if size else ""
     if abs(ratio - 0.15) < 1e-9:
-        return NOISY_DIR / f"noisy_seed{seed}__{noise}__{dataset}__N{size}.jsonl"
+        return NOISY_DIR / f"noisy_seed{seed}__{noise}__{dataset}{size_suffix}.jsonl"
     rate_pct = int(round(ratio * 100))
-    return NOISY_DIR / f"noisy_seed{seed}__{noise}__{dataset}__N{size}__r{rate_pct}.jsonl"
+    return NOISY_DIR / f"noisy_seed{seed}__{noise}__{dataset}{size_suffix}__r{rate_pct}.jsonl"
 
 
 def _pred_path(config_name: str, dataset: str, noise: str, seed: int,
@@ -139,9 +227,10 @@ def _load_noisy(p: Path) -> List[dict]:
 
 async def _run_one_cell(config_name: str, config: dict,
                         dataset: str, noise: str, seed: int,
-                        size: int, pipeline_fn,
+                        size: int, pipelines,
                         *, max_concurrency: int, dummy: bool,
                         ratio: float = 0.15):
+    default_fn, baseline_fns = pipelines
     pred_p = _pred_path(config_name, dataset, noise, seed, ratio)
     if pred_p.exists() and pred_p.stat().st_size > 0:
         logging.info(f"[skip] {pred_p.name}")
@@ -168,16 +257,25 @@ async def _run_one_cell(config_name: str, config: dict,
             dirty  = row["dirty_tags"]
             cfg = dict(config)
             cfg["__dataset__"] = dataset   # so the pipeline knows the ontology
+            cfg["__noise_type__"] = noise  # so the Coder can adapt strategy per noise
             if dummy:
                 cfg["__gold__"] = gold
                 cfg["__seed__"] = seed
             try:
-                # Try the new signature (dataset_name kwarg); fall back to old.
-                try:
-                    pred = await pipeline_fn(tokens, dirty, cfg,
-                                             dataset_name=dataset)
-                except TypeError:
-                    pred = await pipeline_fn(tokens, dirty, cfg)
+                method = cfg.get("method")
+                if method and method in baseline_fns:
+                    fn = baseline_fns[method]
+                    try:
+                        pred = await fn(tokens, dirty, cfg,
+                                        dataset_name=dataset)
+                    except TypeError:
+                        pred = await fn(tokens, dirty, cfg)
+                else:
+                    try:
+                        pred = await default_fn(tokens, dirty, cfg,
+                                                dataset_name=dataset)
+                    except TypeError:
+                        pred = await default_fn(tokens, dirty, cfg)
             except Exception as e:                       # noqa: BLE001
                 logging.error(f"[!] sentence {i} failed ({e!r}); using dirty as fallback")
                 pred = list(dirty)
@@ -231,6 +329,12 @@ def main(argv=None):
     ap.add_argument("--dummy",    action="store_true",
                     help="Use a mock pipeline; no API calls.")
     args = ap.parse_args(argv)
+
+    # Expand default thread pool so MAX_CONCURRENCY LLM calls fit.
+    loop = asyncio.new_event_loop()
+    loop.set_default_executor(
+        concurrent.futures.ThreadPoolExecutor(max_workers=args.max_concurrency))
+    asyncio.set_event_loop(loop)
 
     pipeline_fn = _import_pipeline(args.dummy)
 

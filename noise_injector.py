@@ -20,6 +20,10 @@ _VALID_TYPES_BY_DATASET: Dict[str, List[str]] = {
     "conll2003": ["PER", "LOC", "ORG", "MISC"],
     # WNUT-17 coarsened to 4-class — see gen_noisy.py:_HF_CONFIG['wnut17']['type_remap']
     "wnut17":    ["PER", "LOC", "ORG", "MISC"],
+    # Few-NERD coarsened to 4-class
+    "fewnerd":   ["PER", "LOC", "ORG", "MISC"],
+    # OntoNotes5 coarsened to 4-class
+    "ontonotes5": ["PER", "LOC", "ORG", "MISC"],
 }
 
 

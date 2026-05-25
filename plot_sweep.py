@@ -1,15 +1,10 @@
 """
-plot_sweep.py — produce a publication-ready 2-panel figure of the noise sweep.
-
-Reads `sweep_results.csv` (from sweep_results.py) and writes a PDF figure.
-Left panel:  F1 vs noise ratio, mean ± std bands.
-Right panel: SER vs noise ratio, mean ± std bands.
-Solid lines = TD-DVA Full, dashed lines = Semantic RAG Baseline.
-Three colors = three datasets.
+plot_sweep.py — 5 figures, one per dataset.
+Each figure: left=F1, right=SER, 6 method curves per panel.
 
 Usage:
-    python plot_sweep.py                          # writes f1_ser_vs_noise.pdf
-    python plot_sweep.py --input sweep_results.csv --output paper_fig2.pdf
+    python plot_sweep.py
+    python plot_sweep.py --input sweep_results.csv --outdir ./plots
 """
 from __future__ import annotations
 
@@ -22,57 +17,81 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-
-# --- styling ---------------------------------------------------------------
 mpl.rcParams.update({
-    "font.size":            10,
-    "axes.titlesize":       11,
-    "axes.labelsize":       10,
-    "legend.fontsize":      8.5,
-    "xtick.labelsize":      9,
-    "ytick.labelsize":      9,
+    "font.size":            9,
+    "axes.titlesize":       10,
+    "axes.labelsize":       9,
+    "legend.fontsize":      7.5,
+    "xtick.labelsize":      8,
+    "ytick.labelsize":      8,
     "axes.spines.top":      False,
     "axes.spines.right":    False,
-    "axes.grid":            True,
-    "grid.alpha":           0.25,
+    "grid.alpha":           0.2,
     "grid.linestyle":       "--",
-    "lines.linewidth":      1.8,
+    "lines.linewidth":      1.6,
     "lines.markersize":     5,
-    "pdf.fonttype":         42,         # editable in Illustrator
+    "pdf.fonttype":         42,
     "ps.fonttype":          42,
 })
 
-# Color-blind friendly palette (Wong 2011)
-DATASET_COLORS = {
-    "msra":      "#0072B2",  # blue
-    "conll2003": "#E69F00",  # orange
-    "wnut17":    "#009E73",  # green
+METHOD_COLORS = {
+    "td_dva_full":                "#D62728",
+    "baseline_zero_shot":         "#1F77B4",
+    "baseline_cot_reasoning":     "#FF7F0E",
+    "baseline_self_refine":       "#2CA02C",
+    "baseline_rule_only":         "#9467BD",
+    "baseline_standard_prompting":"#8C564B",
 }
-DATASET_LABELS = {
-    "msra":      "MSRA",
-    "conll2003": "CoNLL-2003",
-    "wnut17":    "WNUT-17",
+METHOD_MARKERS = {
+    "td_dva_full":                "o",
+    "baseline_zero_shot":         "s",
+    "baseline_cot_reasoning":     "^",
+    "baseline_self_refine":       "D",
+    "baseline_rule_only":         "v",
+    "baseline_standard_prompting":"x",
 }
 METHOD_STYLE = {
-    "td_dva_full":           dict(linestyle="-",  marker="o"),
-    "semantic_rag_baseline": dict(linestyle="--", marker="s"),
+    "td_dva_full":                dict(linestyle="-",  linewidth=2.2),
+    "baseline_zero_shot":         dict(linestyle="--", linewidth=1.5),
+    "baseline_cot_reasoning":     dict(linestyle="--", linewidth=1.5),
+    "baseline_self_refine":       dict(linestyle="--", linewidth=1.5),
+    "baseline_rule_only":         dict(linestyle=":",  linewidth=1.8),
+    "baseline_standard_prompting":dict(linestyle="-.", linewidth=1.5),
 }
 METHOD_LABELS = {
-    "td_dva_full":           "TD-DVA Full",
-    "semantic_rag_baseline": "Semantic RAG",
+    "td_dva_full":                "LAD-DVA Full (DEER + DFA)",
+    "baseline_zero_shot":         "Zero-Shot",
+    "baseline_cot_reasoning":     "CoT Reasoning",
+    "baseline_self_refine":       "Self-Refine",
+    "baseline_rule_only":         "Rule-Only (DFA)",
+    "baseline_standard_prompting":"Standard Prompting",
 }
+
+DATASET_LABELS = {
+    "msra":       "MSRA",
+    "conll2003":  "CoNLL-2003",
+    "wnut17":     "WNUT-17",
+    "fewnerd":    "Few-NERD",
+    "ontonotes5": "OntoNotes 5.0",
+}
+
+METHODS_ORDER = [
+    "td_dva_full",
+    "baseline_zero_shot",
+    "baseline_cot_reasoning",
+    "baseline_self_refine",
+    "baseline_rule_only",
+    "baseline_standard_prompting",
+]
+DATASETS_ORDER = ["msra", "conll2003", "wnut17", "fewnerd", "ontonotes5"]
 
 
 def load_csv(p: Path):
-    """Return dict: rows[(method, dataset)] -> sorted list of dicts.
-    Skips blank lines and lines starting with '#'."""
     rows = defaultdict(list)
     with p.open() as f:
-        # Filter out comment/blank lines before passing to DictReader
         cleaned = (ln for ln in f if ln.strip() and not ln.lstrip().startswith("#"))
         reader = csv.DictReader(cleaned)
         for r in reader:
-            # Skip rows without expected fields (e.g. residual artifacts)
             if r.get("method") is None or r.get("f1_mean") is None:
                 continue
             try:
@@ -87,61 +106,77 @@ def load_csv(p: Path):
     return rows
 
 
-def plot(rows, noise_label: str, out: Path):
-    fig, (ax_f1, ax_ser) = plt.subplots(1, 2, figsize=(9.0, 3.6),
-                                          constrained_layout=True)
+def plot_one(rows, dataset: str, out: Path):
+    """Single figure: left=F1, right=SER, 6 method curves each."""
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
+    ax_f1, ax_ser = axes[0], axes[1]
 
-    # F1 panel
-    for (method, ds), series in rows.items():
+    # --- F1 panel ---
+    for method in METHODS_ORDER:
+        key = (method, dataset)
+        if key not in rows:
+            continue
+        series = rows[key]
         xs   = [r["ratio"]   for r in series]
         ys   = [r["f1_mean"] for r in series]
         errs = [r["f1_std"]  for r in series]
-        color = DATASET_COLORS.get(ds, "#666666")
-        style = METHOD_STYLE.get(method, dict(linestyle="-", marker="x"))
-        ax_f1.plot(xs, ys, color=color, **style)
+        color = METHOD_COLORS[method]
+        marker = METHOD_MARKERS[method]
+        style = METHOD_STYLE.get(method, {})
+        ax_f1.plot(xs, ys, color=color, marker=marker, markersize=5, **style)
         ax_f1.fill_between(xs,
                             [y - e for y, e in zip(ys, errs)],
                             [y + e for y, e in zip(ys, errs)],
-                            color=color, alpha=0.12, linewidth=0)
-    ax_f1.set_xlabel("Noise rate")
-    ax_f1.set_ylabel("Span-level F1")
-    ax_f1.set_title(f"(a) F1 vs noise rate — {noise_label}")
-    ax_f1.set_ylim(bottom=0.0)
+                            color=color, alpha=0.10, linewidth=0)
 
-    # SER panel (in percent)
-    for (method, ds), series in rows.items():
-        xs   = [r["ratio"]              for r in series]
-        ys   = [r["ser_mean"] * 100     for r in series]
-        errs = [r["ser_std"]  * 100     for r in series]
-        color = DATASET_COLORS.get(ds, "#666666")
-        style = METHOD_STYLE.get(method, dict(linestyle="-", marker="x"))
-        ax_ser.plot(xs, ys, color=color, **style)
+    ax_f1.set_title("F1 (Span-level)", fontweight="bold")
+    ax_f1.set_xlabel("Noise rate")
+    ax_f1.set_ylabel("F1")
+    ax_f1.set_ylim(bottom=0.0, top=1.0)
+    ax_f1.set_xticks([0.05, 0.15, 0.25, 0.35, 0.45])
+    ax_f1.set_xticklabels(["5%", "15%", "25%", "35%", "45%"])
+    ax_f1.grid(True, alpha=0.2, linestyle="--")
+
+    # --- SER panel ---
+    for method in METHODS_ORDER:
+        key = (method, dataset)
+        if key not in rows:
+            continue
+        series = rows[key]
+        xs   = [r["ratio"]           for r in series]
+        ys   = [r["ser_mean"] * 1000  for r in series]
+        errs = [r["ser_std"]  * 1000  for r in series]
+        color = METHOD_COLORS[method]
+        marker = METHOD_MARKERS[method]
+        style = METHOD_STYLE.get(method, {})
+        ax_ser.plot(xs, ys, color=color, marker=marker, markersize=5, **style)
         ax_ser.fill_between(xs,
                              [max(0, y - e) for y, e in zip(ys, errs)],
                              [y + e         for y, e in zip(ys, errs)],
-                             color=color, alpha=0.12, linewidth=0)
-    ax_ser.set_xlabel("Noise rate")
-    ax_ser.set_ylabel("Syntax Error Rate (%)")
-    ax_ser.set_title(f"(b) SER vs noise rate — {noise_label}")
-    ax_ser.set_ylim(bottom=0.0)
+                             color=color, alpha=0.10, linewidth=0)
 
-    # Custom legend: separate handles for color (dataset) and linestyle (method)
+    ax_ser.set_title("SER (Syntax Error Rate ‰)", fontweight="bold")
+    ax_ser.set_xlabel("Noise rate")
+    ax_ser.set_ylabel("SER (‰)")
+    ax_ser.set_ylim(bottom=0.0)
+    ax_ser.set_xticks([0.05, 0.15, 0.25, 0.35, 0.45])
+    ax_ser.set_xticklabels(["5%", "15%", "25%", "35%", "45%"])
+    ax_ser.grid(True, alpha=0.2, linestyle="--")
+
+    # --- Shared title + legend ---
+    fig.suptitle(f"{DATASET_LABELS.get(dataset, dataset)} — BT Noise Sweep",
+                 fontsize=12, fontweight="bold", y=1.02)
+
     from matplotlib.lines import Line2D
-    dataset_handles = [Line2D([0], [0], color=DATASET_COLORS[d], lw=2,
-                              label=DATASET_LABELS[d])
-                       for d in DATASET_COLORS
-                       if any(k[1] == d for k in rows)]
-    method_handles  = [Line2D([0], [0], color="black",
-                              linestyle=METHOD_STYLE[m]["linestyle"],
-                              marker=METHOD_STYLE[m]["marker"],
-                              label=METHOD_LABELS[m])
-                       for m in METHOD_STYLE
-                       if any(k[0] == m for k in rows)]
-    # Place dataset legend on the F1 panel, method legend on the SER panel
-    ax_f1.legend(handles=dataset_handles,  loc="lower left", frameon=False,
-                 title="Dataset")
-    ax_ser.legend(handles=method_handles, loc="upper left", frameon=False,
-                  title="Method")
+    handles = [
+        Line2D([0], [0], color=METHOD_COLORS[m], marker=METHOD_MARKERS[m],
+               linestyle=METHOD_STYLE[m]["linestyle"],
+               linewidth=METHOD_STYLE[m].get("linewidth", 1.5),
+               markersize=5, label=METHOD_LABELS[m])
+        for m in METHODS_ORDER
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=6,
+               frameon=True, fontsize=7.5)
 
     fig.savefig(out, bbox_inches="tight")
     print(f"# wrote {out}", file=sys.stderr)
@@ -150,18 +185,20 @@ def plot(rows, noise_label: str, out: Path):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--input",  default="sweep_results.csv")
-    ap.add_argument("--output", default="f1_ser_vs_noise.pdf")
-    ap.add_argument("--noise-label", default="Boundary Truncation (BT)",
-                    help="Human-readable noise label for the figure title.")
+    ap.add_argument("--outdir", default=".", help="Output directory for PDFs")
     args = ap.parse_args(argv)
 
     inp = Path(args.input)
     if not inp.exists():
-        print(f"input not found: {inp}; run sweep_results.py first",
-              file=sys.stderr)
+        print(f"input not found: {inp}; run sweep_results.py first", file=sys.stderr)
         sys.exit(1)
     rows = load_csv(inp)
-    plot(rows, args.noise_label, Path(args.output))
+
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    for ds in DATASETS_ORDER:
+        out = outdir / f"noise_sweep_{ds}.pdf"
+        plot_one(rows, ds, out)
 
 
 if __name__ == "__main__":

@@ -25,11 +25,12 @@ from run_multiseed import (CONFIGURATIONS, DATASETS, NOISE_TYPES,
 
 
 METHOD_LABEL = {
-    "td_dva_full":           r"\textbf{TD-DVA Full ($\lambda{=}1.0$)}",
-    "semantic_rag_baseline": "Semantic RAG Baseline",
-    "wo_topology_rag":       r"\,\,\,w/o Topology RAG",
-    "wo_dfa_wash":           r"\,\,\,w/o DFA Wash",
-    "late_fusion_bias":      r"\,\,\,Late-Fusion Bias ($\lambda{=}1.35$)",
+    "td_dva_full":              r"\textbf{LAD-DVA Full (DEER + DFA)}",
+    "baseline_zero_shot":       "Zero-Shot (2025 baseline)",
+    "baseline_cot_reasoning":   "CoT Reasoning",
+    "baseline_self_refine":     "Self-Refine",
+    "baseline_rule_only":       "Rule-Only (DFA fix)",
+    "baseline_standard_prompting": "Standard Prompting (Nagar et al., 2024)",
 }
 
 
@@ -191,7 +192,7 @@ def emit_latex(cells: Dict[Tuple[str, str, str], dict],
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--reference", default="semantic_rag_baseline",
+    ap.add_argument("--reference", default="baseline_zero_shot",
                     help="Method to bootstrap against.")
     ap.add_argument("--bootstrap-iter", type=int, default=10_000)
     ap.add_argument("--methods", nargs="+", default=list(CONFIGURATIONS.keys()))
