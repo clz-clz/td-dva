@@ -16,7 +16,7 @@ Resumable: cells whose prediction file already exists are skipped.
 Usage:
     python run_multiseed.py                 # full matrix, real pipeline
     python run_multiseed.py --dummy         # offline; mocks run_agent_pipeline
-    python run_multiseed.py --configs td_dva_full semantic_rag_baseline
+    python run_multiseed.py --configs lad_dva_full semantic_rag_baseline
     python run_multiseed.py --seeds 13 42 2024
 """
 from __future__ import annotations
@@ -55,7 +55,7 @@ MAX_CONCURRENCY = 200     # high throughput for LLM API calls
 # Configurations — each key maps to either a pipeline config or a standalone method.
 CONFIGURATIONS: Dict[str, dict] = {
     # Our method: Coder + Reviewer(DEER retrieval) + Voting + DFA wash
-    "td_dva_full":              {"lambda_bias": 1.0,  "use_dfa": True},
+    "lad_dva_full":              {"lambda_bias": 1.0,  "use_dfa": True},
     # Baselines (2024-2025 published & standard)
     "baseline_zero_shot":         {"method": "zero_shot"},
     "baseline_cot_reasoning":     {"method": "cot_reasoning"},
@@ -76,7 +76,7 @@ PRED_DIR.mkdir(exist_ok=True)
 def _import_pipeline(dummy: bool):
     """Return (default_pipeline, baseline_pipelines_dict).
 
-    default_pipeline: async fn for td_dva_full.
+    default_pipeline: async fn for lad_dva_full.
     baseline_pipelines: dict mapping method_name -> async fn for standalone baselines.
     """
     from utils import enforce_iob2_syntax

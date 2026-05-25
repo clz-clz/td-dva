@@ -35,7 +35,7 @@ mpl.rcParams.update({
 })
 
 METHOD_COLORS = {
-    "td_dva_full":                "#D62728",
+    "lad_dva_full":                "#D62728",
     "baseline_zero_shot":         "#1F77B4",
     "baseline_cot_reasoning":     "#FF7F0E",
     "baseline_self_refine":       "#2CA02C",
@@ -43,7 +43,7 @@ METHOD_COLORS = {
     "baseline_standard_prompting":"#8C564B",
 }
 METHOD_MARKERS = {
-    "td_dva_full":                "o",
+    "lad_dva_full":                "o",
     "baseline_zero_shot":         "s",
     "baseline_cot_reasoning":     "^",
     "baseline_self_refine":       "D",
@@ -51,7 +51,7 @@ METHOD_MARKERS = {
     "baseline_standard_prompting":"x",
 }
 METHOD_STYLE = {
-    "td_dva_full":                dict(linestyle="-",  linewidth=2.2),
+    "lad_dva_full":                dict(linestyle="-",  linewidth=2.2),
     "baseline_zero_shot":         dict(linestyle="--", linewidth=1.5),
     "baseline_cot_reasoning":     dict(linestyle="--", linewidth=1.5),
     "baseline_self_refine":       dict(linestyle="--", linewidth=1.5),
@@ -59,7 +59,7 @@ METHOD_STYLE = {
     "baseline_standard_prompting":dict(linestyle="-.", linewidth=1.5),
 }
 METHOD_LABELS = {
-    "td_dva_full":                "LAD-DVA Full (DEER + DFA)",
+    "lad_dva_full":                "LAD-DVA Full (DEER + DFA)",
     "baseline_zero_shot":         "Zero-Shot",
     "baseline_cot_reasoning":     "CoT Reasoning",
     "baseline_self_refine":       "Self-Refine",
@@ -76,7 +76,7 @@ DATASET_LABELS = {
 }
 
 METHODS_ORDER = [
-    "td_dva_full",
+    "lad_dva_full",
     "baseline_zero_shot",
     "baseline_cot_reasoning",
     "baseline_self_refine",

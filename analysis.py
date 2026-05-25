@@ -1,4 +1,4 @@
-"""F1 gap analysis: why td_dva_full < baselines, and where."""
+"""F1 gap analysis: why lad_dva_full < baselines, and where."""
 import json, sys
 from pathlib import Path
 from collections import defaultdict
@@ -9,7 +9,7 @@ PRED_DIR = Path("predictions_multiseed")
 SEED = 13
 DATASETS = ["msra", "conll2003", "wnut17", "fewnerd", "ontonotes5"]
 NOISES  = ["BT", "IF", "ATF"]
-METHODS = ["td_dva_full", "baseline_standard_prompting", "baseline_zero_shot",
+METHODS = ["lad_dva_full", "baseline_standard_prompting", "baseline_zero_shot",
            "baseline_rule_only", "baseline_cot_reasoning", "baseline_self_refine"]
 
 def load(method, dataset, noise):
@@ -30,7 +30,7 @@ def get_entities(tags):
 
 
 def analyze_one(dataset, noise):
-    dva = load("td_dva_full", dataset, noise)
+    dva = load("lad_dva_full", dataset, noise)
     dirty = load("baseline_standard_prompting", dataset, noise)
     zero  = load("baseline_zero_shot", dataset, noise)
     rule  = load("baseline_rule_only", dataset, noise)
@@ -134,7 +134,7 @@ def main():
     print("\n=== Optimal Strategy Per Cell ===")
     for r in sorted(results, key=lambda x: (x["dataset"], x["noise"])):
         best = max(
-            ("td_dva_full", r["f1_dva"]),
+            ("lad_dva_full", r["f1_dva"]),
             ("dirty (no-op)", r["f1_dirty"]),
             ("zero_shot", r["f1_zero"] or 0),
             ("rule_only", r["f1_rule"] or 0),

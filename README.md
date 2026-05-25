@@ -1,4 +1,4 @@
-# Multi-seed runner for TD-DVA
+# Multi-seed runner for LAD-DVA
 
 Drop these five files alongside your existing `multi_agent_v2.py`,
 `rag_voting_engine.py`, `utils.py`, and `chroma_db/`. Then:
@@ -61,7 +61,7 @@ Field names match what `multi_agent_v2.run_agent_pipeline` expects.
 One file per `(config, dataset, noise_type, seed)`:
 
 ```
-pred_seed13__td_dva_full__msra__BT.jsonl
+pred_seed13__lad_dva_full__msra__BT.jsonl
 pred_seed13__semantic_rag_baseline__msra__BT.jsonl
 ...
 ```
@@ -75,7 +75,7 @@ Each line:
 
 ```json
 {
-  "td_dva_full|msra|BT": {
+  "lad_dva_full|msra|BT": {
     "n_seeds": 3,
     "f1_mean": 0.6312, "f1_std": 0.0091,
     "p_mean":  0.7104, "p_std":  0.0156,
@@ -97,7 +97,7 @@ The two main methods are enabled by default in `run_multiseed.py`:
 
 ```python
 CONFIGURATIONS = {
-    "td_dva_full":           {"lambda_bias": 1.0, "use_dfa": True,  "use_topology_rag": True},
+    "lad_dva_full":           {"lambda_bias": 1.0, "use_dfa": True,  "use_topology_rag": True},
     "semantic_rag_baseline": {"lambda_bias": 1.0, "use_dfa": False, "use_topology_rag": False},
     # uncomment to add ablations:
     # "wo_topology_rag":     {"lambda_bias": 1.0, "use_dfa": True,  "use_topology_rag": False},

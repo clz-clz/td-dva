@@ -5,7 +5,7 @@ paired bootstrap, emit publication-ready LaTeX Table 1.
 Usage:
     python aggregate_seeds.py                          # prints LaTeX to stdout
     python aggregate_seeds.py > new_table1.tex         # capture
-    python aggregate_seeds.py --reference td_dva_full  # change bootstrap pivot
+    python aggregate_seeds.py --reference lad_dva_full  # change bootstrap pivot
     python aggregate_seeds.py --bootstrap-iter 5000    # speed up at the cost of CI tightness
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ from run_multiseed import (CONFIGURATIONS, DATASETS, NOISE_TYPES,
 
 
 METHOD_LABEL = {
-    "td_dva_full":              r"\textbf{LAD-DVA Full (DEER + DFA)}",
+    "lad_dva_full":              r"\textbf{LAD-DVA Full (DEER + DFA)}",
     "baseline_zero_shot":       "Zero-Shot (2025 baseline)",
     "baseline_cot_reasoning":   "CoT Reasoning",
     "baseline_self_refine":     "Self-Refine",
